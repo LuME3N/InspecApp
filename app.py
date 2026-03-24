@@ -7,7 +7,7 @@ import io
 st.set_page_config(page_title="Elektra-Assistent AI", page_icon="⚡")
 
 # Gebruik de key die je hebt (In een echte app zetten we dit in 'Secrets')
-genai.configure(api_key="JOUW_KEY_HIER") 
+genai.configure(api_key="AIzaSyA5ObB1yq6m0kzDZAFkR8tFj-h38-C1Sgc") 
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 st.title("⚡ AI Verdeelkast Inspectie")
