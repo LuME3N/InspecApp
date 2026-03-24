@@ -6,27 +6,21 @@ from PIL import Image
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-except:
-    st.error("⚠️ API Key niet gevonden in Secrets! Voeg GEMINI_API_KEY toe.")
+except Exception as e:
+    st.error(f"⚠️ API Key probleem: {e}")
     st.stop()
 
 # 2. App instellingen
 st.set_page_config(page_title="ElektraVision AI", layout="wide")
 st.title("⚡ Elektra-Assistent AI")
 
-# 3. Model selectie - Aangepast naar de nieuwste stabiele versie
-# We gebruiken 'gemini-1.5-flash-latest' voor de beste ondersteuning
-try:
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-except:
-    # Backup als de naam in de toekomst verandert
-    model = genai.GenerativeModel('gemini-1.5-flash')
+# 3. Model selectie - Gebruik de meest stabiele naam
+# We laten 'latest' en 'v1beta' weg om conflicten te voorkomen
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-# 4. De Keuzeknop voor Foto-bron
-bron = st.radio("Kies hoe je de foto wilt toevoegen:", ["Camera", "Bladeren (Galerij/Upload)"])
+# 4. Interface
+bron = st.radio("Foto toevoegen via:", ["Camera", "Bladeren (Galerij)"])
 
-# 5. Het input veld
-img_file = None
 if bron == "Camera":
     img_file = st.camera_input("Maak een foto van de verdeelkast")
 else:
@@ -34,28 +28,30 @@ else:
 
 if img_file is not None:
     img = Image.open(img_file)
-    st.image(img, caption="Geselecteerde afbeelding", width=400)
+    st.image(img, caption="Geselecteerde afbeelding", width=300)
     
     if st.button("Analyseer Groepen"):
         with st.spinner("AI analyseert de componenten..."):
             try:
+                # Instructie voor de AI
                 prompt = """
-                Kijk naar deze foto van een elektrische verdeelkast. 
-                Identificeer alle groepen. Maak een overzichtelijke tabel met:
-                - Groepnummer
-                - Component (bijv: B16, ALS)
-                - Functie/Ruimte
-                
-                Eindig met een lege sectie 'Meetwaarden'.
+                Kijk naar deze foto van een elektra verdeelkast.
+                Maak een lijst van alle groepen in een tabel:
+                - Nummer
+                - Type (bijv. B16)
+                - Functie
                 """
                 
-                # De eigenlijke aanroep naar de AI
+                # De aanroep
                 response = model.generate_content([prompt, img])
                 
-                st.success("Analyse voltooid!")
-                st.markdown(response.text)
-                st.download_button("Download Tekst", response.text, file_name="inspectie.txt")
+                if response.text:
+                    st.success("Analyse voltooid!")
+                    st.markdown(response.text)
+                else:
+                    st.warning("De AI kon geen tekst genereren uit deze foto.")
             
             except Exception as e:
-                st.error(f"Fout bij analyse: {e}")
-                st.info("Tip: Controleer in Google AI Studio of je 'Gemini 1.5 Flash' kunt gebruiken.")
+                # Als het nog steeds misgaat, tonen we de exacte fout
+                st.error(f"Er ging iets mis: {e}")
+                st.info("Check of je API-key wel actief is in Google AI Studio.")
