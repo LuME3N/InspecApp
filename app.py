@@ -11,11 +11,11 @@ except:
     st.stop()
 
 # 2. App instellingen
-st.set_page_config(page_title="Elektra AI", layout="wide", page_icon="⚡")
-st.title("⚡ Elektra-Assistent")
-st.write("Scan een verdeelkast en genereer direct een overzicht voor je rapportage.")
+st.set_page_config(page_title="Scope 8 Assistent", layout="wide", page_icon="⚡")
+st.title("⚡ Scope 8 Meetrapport AI")
+st.write("Scan de verdeelkast en genereer direct een meetformulier voor je keuring.")
 
-# 3. Het model dat we succesvol hebben getest!
+# 3. Het 2.5 Flash model
 model = genai.GenerativeModel('models/gemini-2.5-flash')
 
 # 4. Interface voor de foto
@@ -31,34 +31,44 @@ if img_file is not None:
     img = Image.open(img_file)
     st.image(img, caption="Geselecteerde kast", width=400)
     
-    if st.button("Analyseer Groepen", type="primary"):
-        with st.spinner("AI scant de componenten..."):
+    if st.button("Genereer Scope 8 Meetrapport", type="primary"):
+        with st.spinner("AI bouwt het Scope 8 formulier op..."):
             try:
-                # De opdracht aan de AI (Deze kun je later altijd nog aanpassen!)
+                # DE NIEUWE SCOPE 8 INSTRUCTIE VOOR DE AI
                 prompt = """
-                Je bent een assistent voor een elektricien. 
-                Kijk naar deze foto van een elektrische verdeelkast. 
-                Identificeer alle groepen en componenten. Maak een overzichtelijke Markdown tabel met:
-                - Groep / Positie (bijv: 1, 2, Hoofdschakelaar)
-                - Component (bijv: Installatieautomaat, ALS, Krachtgroep)
-                - Waarde/Karakteristiek (bijv: B16, C20, 40A/30mA)
-                - Achter ALS (indien van toepassing)
-                - Functie/Ruimte (Als er labels bijzitten)
+                Je bent een expert NEN 3140 en SCIOS Scope 8 inspecteur. 
+                Kijk naar deze foto van een elektrische verdeelkast en identificeer alle groepen en componenten.
                 
-                Eindig het rapport met een lege sectie 'Meetwaarden' (zoals Isolatieweerstand, Uitschakeltijd) die de elektricien later zelf kan invullen.
+                Genereer een professioneel meetrapport (in een Markdown Tabel) voor de inspectie.
+                De tabel moet voor ELKE gevonden groep, aardlekschakelaar (ALS) of hoofdschakelaar een rij hebben met de volgende exacte kolommen:
+                
+                1. Component / Groep (bijv. Groep 1, ALS A, Hoofdschakelaar)
+                2. Karakteristiek (bijv. B16, 40A/30mA, 40A)
+                3. R-iso (MΩ)
+                4. Z-s (Ω)
+                5. ALS Uitschakeltijd (ms)
+                6. ALS Uitschakelstroom (mA)
+                7. R-A (Ω) [Aardverspreidingsweerstand]
+                8. Testknop (OK / Niet OK)
+                9. Opmerking / Functie
+                
+                Instructies voor het invullen:
+                - Vul kolom 1, 2 en 9 in op basis van wat je op de foto ziet (of afleidt van de labels).
+                - Vul in kolom 3 tot en met 8 stippellijntjes (.....) in. Dit is een leeg formulier dat de elektricien later zelf invult tijdens het meten.
+                - Zorg dat alles in één overzichtelijke tabel staat.
                 """
                 
                 response = model.generate_content([prompt, img])
                 
                 if response.text:
-                    st.success("✅ Analyse voltooid!")
+                    st.success("✅ Meetrapport gegenereerd!")
                     st.markdown(response.text)
                     
                     # Download knop
                     st.download_button(
-                        label="Download Rapport (Tekst)", 
+                        label="Download Meetrapport (.txt)", 
                         data=response.text, 
-                        file_name="verdeelkast_inspectie.txt",
+                        file_name="scope8_meetrapport.txt",
                         mime="text/plain"
                     )
                 else:
