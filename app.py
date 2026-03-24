@@ -1,24 +1,23 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
+import json
+import pandas as pd
+import re
 
 # 1. Veilig de API Key ophalen
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
 except:
-    st.error("⚠️ API Key niet gevonden! Check de Secrets in Streamlit.")
+    st.error("⚠️ API Key niet gevonden in Secrets!")
     st.stop()
 
-# 2. App instellingen
-st.set_page_config(page_title="Scope 8 Assistent", layout="wide", page_icon="⚡")
-st.title("⚡ Scope 8 Meetrapport AI")
-st.write("Scan de verdeelkast en genereer direct een meetformulier voor je keuring.")
+st.set_page_config(page_title="Interactieve Scope 8 AI", layout="wide", page_icon="⚡")
+st.title("⚡ Scope 8 Interactief Meetrapport")
 
-# 3. Het 2.5 Flash model
 model = genai.GenerativeModel('models/gemini-2.5-flash')
 
-# 4. Interface voor de foto
 bron = st.radio("Kies invoer:", ["Camera", "Bladeren (Galerij)"], horizontal=True)
 
 if bron == "Camera":
@@ -26,53 +25,117 @@ if bron == "Camera":
 else:
     img_file = st.file_uploader("Kies een afbeelding", type=['png', 'jpg', 'jpeg'])
 
-# 5. De Analyse
+# Functie om de NEN1010 regels te checken
+def controleer_metingen(df):
+    beoordeling = []
+    
+    for index, row in df.iterrows():
+        fouten = []
+        type_comp = str(row.get("Type", "")).upper()
+        
+        # 1. Controle Isolatieweerstand (> 1.0 MOhm)
+        r_iso = row.get("R_iso (MΩ)")
+        if pd.notna(r_iso) and r_iso != "":
+            try:
+                if float(r_iso) < 1.0:
+                    fouten.append("R_iso < 1.0 MΩ")
+            except: pass
+            
+        # 2. Controle Uitschakelstroom (I_k) vs Karakteristiek
+        i_k = row.get("I_k (A)")
+        if pd.notna(i_k) and i_k != "":
+            try:
+                gemeten_stroom = float(i_k)
+                # Zoek naar B16, C20, etc. in de Type kolom
+                match = re.search(r'([BCDK])(\d+)', type_comp)
+                if match:
+                    karakteristiek = match.group(1)
+                    i_nom = int(match.group(2))
+                    
+                    # Bepaal de factor (B=5, C=10, D=20)
+                    if karakteristiek == 'B': factor = 5
+                    elif karakteristiek == 'C': factor = 10
+                    elif karakteristiek == 'D': factor = 20
+                    else: factor = 5
+                    
+                    vereiste_stroom = factor * i_nom
+                    
+                    if gemeten_stroom < vereiste_stroom:
+                        fouten.append(f"I_k te laag! Moet >{vereiste_stroom}A zijn ({factor}xIn bij {type_comp})")
+            except: pass
+
+        # 3. Eindbeoordeling opmaken
+        if not fouten:
+            # Check of er wel íets is ingevuld, anders laten we hem leeg
+            if pd.notna(r_iso) or pd.notna(i_k):
+                beoordeling.append("✅ Akkoord")
+            else:
+                beoordeling.append("-")
+        else:
+            beoordeling.append("❌ NIET AKKOORD: " + " | ".join(fouten))
+            
+    df["NEN1010 Beoordeling"] = beoordeling
+    return df
+
+# De Analyse
 if img_file is not None:
     img = Image.open(img_file)
-    st.image(img, caption="Geselecteerde kast", width=400)
     
-    if st.button("Genereer Scope 8 Meetrapport", type="primary"):
-        with st.spinner("AI bouwt het Scope 8 formulier op..."):
-            try:
-                # DE NIEUWE SCOPE 8 INSTRUCTIE VOOR DE AI
-                prompt = """
-                Je bent een expert NEN 3140 en SCIOS Scope 8 inspecteur. 
-                Kijk naar deze foto van een elektrische verdeelkast en identificeer alle groepen en componenten.
-                
-                Genereer een professioneel meetrapport (in een Markdown Tabel) voor de inspectie.
-                De tabel moet voor ELKE gevonden groep, aardlekschakelaar (ALS) of hoofdschakelaar een rij hebben met de volgende exacte kolommen:
-                
-                1. Component / Groep (bijv. Groep 1, ALS A, Hoofdschakelaar)
-                2. Karakteristiek (bijv. B16, 40A/30mA, 40A)
-                3. R-iso (MΩ)
-                4. Z-s (Ω)
-                5. ALS Uitschakeltijd (ms)
-                6. ALS Uitschakelstroom (mA)
-                7. R-A (Ω) [Aardverspreidingsweerstand]
-                8. Testknop (OK / Niet OK)
-                9. Opmerking / Functie
-                
-                Instructies voor het invullen:
-                - Vul kolom 1, 2 en 9 in op basis van wat je op de foto ziet (of afleidt van de labels).
-                - Vul in kolom 3 tot en met 8 stippellijntjes (.....) in. Dit is een leeg formulier dat de elektricien later zelf invult tijdens het meten.
-                - Zorg dat alles in één overzichtelijke tabel staat.
-                """
-                
-                response = model.generate_content([prompt, img])
-                
-                if response.text:
-                    st.success("✅ Meetrapport gegenereerd!")
-                    st.markdown(response.text)
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.image(img, caption="Foto Verdeelkast", use_container_width=True)
+    
+    with col2:
+        if st.button("Analyseer en Maak Tabel", type="primary"):
+            with st.spinner("AI zet foto om naar interactieve data..."):
+                try:
+                    # We vragen nu om JSON (computer-data) in plaats van een getekende tekst-tabel
+                    prompt = """
+                    Kijk naar deze foto van een verdeelkast.
+                    Maak een lijst van alle groepen en componenten.
+                    Geef het antwoord UITSLUITEND in puur JSON formaat terug, als een array van objecten.
+                    Sleutels die je moet gebruiken: "Component", "Type", "Functie".
+                    Voorbeeld:
+                    [{"Component": "Groep 1", "Type": "B16", "Functie": "Wasmachine"}, {"Component": "ALS 1", "Type": "40A/30mA", "Functie": ""}]
+                    Zorg dat er GEEN markdown (zoals ```json) omheen staat, alleen de pure data.
+                    """
                     
-                    # Download knop
-                    st.download_button(
-                        label="Download Meetrapport (.txt)", 
-                        data=response.text, 
-                        file_name="scope8_meetrapport.txt",
-                        mime="text/plain"
-                    )
-                else:
-                    st.warning("De AI kon geen tekst genereren. Probeer een foto met beter licht.")
+                    response = model.generate_content([prompt, img])
+                    
+                    # Haal de JSON data uit het antwoord
+                    ruwe_tekst = response.text.replace("```json", "").replace("```", "").strip()
+                    groepen_data = json.loads(ruwe_tekst)
+                    
+                    # Voeg lege meet-kolommen toe
+                    for item in groepen_data:
+                        item["R_iso (MΩ)"] = None
+                        item["I_k (A)"] = None
+                        item["Z_s (Ω)"] = None
+                        item["t_a ALS (ms)"] = None
+                        item["Testknop"] = False
+                    
+                    # Sla op in het 'geheugen' van Streamlit
+                    st.session_state['meet_data'] = pd.DataFrame(groepen_data)
+                    st.success("Tabel klaar voor invoer!")
+                    
+                except Exception as e:
+                    st.error(f"Er ging iets mis bij het lezen van de data: {e}")
+                    st.info("Tip: Soms helpt het om de knop nog een keer in te drukken.")
+
+        # Als de data in het geheugen staat, toon het interactieve schema
+        if 'meet_data' in st.session_state:
+            st.write("### Vul je metingen in:")
             
-            except Exception as e:
-                st.error(f"Er ging iets mis tijdens de analyse: {e}")
+            # De interactieve tabel!
+            bewerkte_df = st.data_editor(
+                st.session_state['meet_data'],
+                num_rows="dynamic",
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Knop om de beoordeling uit te voeren
+            if st.button("Check NEN 1010 Normen"):
+                gecontroleerde_df = controleer_metingen(bewerkte_df)
+                st.session_state['meet_data'] = gecontroleerde_df # Update het geheugen
+                st.rerun() # Herlaad het scherm om de rode kruisjes/groene vinkjes te laten zien
