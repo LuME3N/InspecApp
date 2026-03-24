@@ -2,27 +2,43 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 
-# 1. Veilig de API Key ophalen
+st.set_page_config(page_title="Elektra AI", layout="wide")
+st.title("⚡ Elektra-Assistent - Model Zoeker")
+
+# 1. API Key ophalen
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-except Exception as e:
-    st.error(f"⚠️ API Key probleem: {e}")
+except:
+    st.error("⚠️ Geen API Key gevonden in Secrets.")
     st.stop()
 
-# 2. App instellingen
-st.set_page_config(page_title="ElektraVision AI", layout="wide")
-st.title("⚡ Elektra-Assistent AI")
+# 2. Vraag aan Google welke modellen JIJ mag gebruiken
+beschikbare_modellen = []
+try:
+    for m in genai.list_models():
+        # We zoeken alleen naar modellen die beelden en tekst kunnen verwerken
+        if 'generateContent' in m.supported_generation_methods:
+            beschikbare_modellen.append(m.name)
+except Exception as e:
+    st.error(f"Kan niet met Google verbinden. Fout: {e}")
+    st.stop()
 
-# 3. Model selectie - Gebruik de meest stabiele naam
-# We laten 'latest' en 'v1beta' weg om conflicten te voorkomen
-model = genai.GenerativeModel('gemini-1.5-flash')
+if not beschikbare_modellen:
+    st.error("🚨 Jouw API-sleutel heeft geen toegang tot de benodigde modellen. Dit komt vaak door Europese regio-restricties of omdat er geen betaalmethode is gekoppeld in Google AI Studio.")
+    st.stop()
 
-# 4. Interface
+st.success("Verbinding met Google gelukt! Kies hieronder een model uit de lijst:")
+
+# 3. Laat jou kiezen uit de lijst die Google teruggeeft!
+gekozen_model = st.selectbox("Selecteer een beschikbaar AI-model:", beschikbare_modellen)
+
+# 4. De rest van de app
+model = genai.GenerativeModel(gekozen_model)
+
 bron = st.radio("Foto toevoegen via:", ["Camera", "Bladeren (Galerij)"])
-
 if bron == "Camera":
-    img_file = st.camera_input("Maak een foto van de verdeelkast")
+    img_file = st.camera_input("Maak een foto")
 else:
     img_file = st.file_uploader("Kies een afbeelding", type=['png', 'jpg', 'jpeg'])
 
@@ -30,28 +46,13 @@ if img_file is not None:
     img = Image.open(img_file)
     st.image(img, caption="Geselecteerde afbeelding", width=300)
     
-    if st.button("Analyseer Groepen"):
-        with st.spinner("AI analyseert de componenten..."):
+    if st.button("Test dit model"):
+        with st.spinner(f"Scannen met {gekozen_model}..."):
             try:
-                # Instructie voor de AI
-                prompt = """
-                Kijk naar deze foto van een elektra verdeelkast.
-                Maak een lijst van alle groepen in een tabel:
-                - Nummer
-                - Type (bijv. B16)
-                - Functie
-                """
-                
-                # De aanroep
+                prompt = "Maak een tabel van alle groepen op deze foto met Nummer, Type en Functie."
                 response = model.generate_content([prompt, img])
-                
-                if response.text:
-                    st.success("Analyse voltooid!")
-                    st.markdown(response.text)
-                else:
-                    st.warning("De AI kon geen tekst genereren uit deze foto.")
-            
+                st.success("Gelukt! Dit model werkt voor jou.")
+                st.markdown(response.text)
             except Exception as e:
-                # Als het nog steeds misgaat, tonen we de exacte fout
-                st.error(f"Er ging iets mis: {e}")
-                st.info("Check of je API-key wel actief is in Google AI Studio.")
+                st.error(f"Fout met model {gekozen_model}: {e}")
+                st.warning("Probeer een ander model uit de lijst hierboven!")
